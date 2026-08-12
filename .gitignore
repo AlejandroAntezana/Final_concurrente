@@ -3,4 +3,5 @@ bin/
   *.class
   .idea/
   *.iml
-
+GUIA_DEFENSA.md
+DECISIONES_DE_SINCRONIZACION.md
