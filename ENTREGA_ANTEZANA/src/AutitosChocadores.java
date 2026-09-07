@@ -24,7 +24,7 @@ public class AutitosChocadores implements ActividadParque{
         try {
             Registro.informar(nombre + " ocupo un lugar en los autitos");
             barrera.await();
-            Thread.sleep(70); //Simula que estan jugando
+            Thread.sleep(70);
             return true;
         } catch (java.util.concurrent.BrokenBarrierException e) {
             Registro.informar("Se interrumpio un turno de autitos");
