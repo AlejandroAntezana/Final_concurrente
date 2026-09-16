@@ -37,6 +37,13 @@ public String getNombre(){
         }
     }
 
+    @Override
+    public void abrir() {
+        this.mesa = new CyclicBarrier(4); // Reinicia la barrera para el nuevo dia
+        this.abierto = true;
+        Registro.informar(" Comedor - habilitado para el publico.");
+    }
+
     public void cerrar() {
         abierto = false;
         mesa.reset();

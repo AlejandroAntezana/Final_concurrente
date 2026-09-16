@@ -38,6 +38,12 @@ public class JuegosDePremios implements ActividadParque{
         return (SolicitudPremio) solicitudes.take();
     }
 
+    @Override
+    public void abrir() {
+        this.abierto = true;
+        Registro.informar("Juego de Premios - abrio sus ventanillas de canje.");
+    }
+
     public void cerrar() {
         abierto = false;
     }

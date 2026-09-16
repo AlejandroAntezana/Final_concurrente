@@ -43,6 +43,13 @@ public class MontanaRusa implements ActividadParque{
         return true;
     }
 
+    @Override
+    public void abrir() {
+        this.barreraSalida = new CyclicBarrier(5); // Reinicia la barrera para el nuevo dia
+        this.abierto = true;
+        Registro.informar(" Montaña Rusa - habilitada para el publico.");
+    }
+
     public void cerrar(){
         abierto = false;
         barreraSalida.reset();

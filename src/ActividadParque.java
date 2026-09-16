@@ -9,4 +9,6 @@ public interface ActividadParque {
  void cerrar();
 
  String getNombre();
+
+ void abrir();
 }

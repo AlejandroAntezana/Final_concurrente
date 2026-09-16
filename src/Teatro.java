@@ -17,8 +17,16 @@ public class Teatro implements ActividadParque{
     }
 
     public boolean usar(String nombre) throws InterruptedException {
+        // Chequeo previo: si cerro, no compite por capacidad
+        if (!abierto) {
+            return false;
+        }
         capacidadSala.acquire();
         try {
+            // Chequeo antes de trabarse en la barrera
+            if (!abierto) {
+                return false;
+            }
             grupoEntrada.await();
             Registro.informar(nombre + " esta viendo el espectaculo");
             Thread.sleep(80);
@@ -29,6 +37,13 @@ public class Teatro implements ActividadParque{
         } finally {
             capacidadSala.release();
         }
+    }
+
+    @Override
+    public void abrir() {
+        this.grupoEntrada = new CyclicBarrier(5); // Reinicia la barrera para el nuevo dia
+        this.abierto = true;
+        Registro.informar(" Teatro - habilitada para el publico.");
     }
 
     public String getNombre(){

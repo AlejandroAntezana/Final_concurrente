@@ -34,6 +34,13 @@ public class AutitosChocadores implements ActividadParque{
         }
     }
 
+    @Override
+    public void abrir() {
+        this.barrera = new CyclicBarrier(20); // Reinicia la barrera para el nuevo dia
+        this.abierto = true;
+        Registro.informar(" Autitos Chocadores - habilitada para el publico.");
+    }
+
     public void cerrar() {
         abierto = false;
         barrera.reset();

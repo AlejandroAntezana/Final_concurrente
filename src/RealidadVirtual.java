@@ -38,7 +38,7 @@ public class RealidadVirtual implements ActividadParque{
     private boolean tomarEquipo(String nombre) throws InterruptedException {
         control.lock();
         try {
-            while (visores < 1 || manoplas < 2 || bases < 1) {
+            while ( abierto && (visores < 1 || manoplas < 2 || bases < 1)) {
                 equipoDisponible.await();
             }
             if (!abierto) {
@@ -62,6 +62,17 @@ public class RealidadVirtual implements ActividadParque{
             bases++;
             Registro.informar(nombre + " devolvio el equipo completo de VR");
             equipoDisponible.signalAll();
+        } finally {
+            control.unlock();
+        }
+    }
+
+    @Override
+    public void abrir() {
+        control.lock();
+        try {
+            abierto = true;
+            Registro.informar(" Realidad Virtual - abierta con stock completo de equipos.");
         } finally {
             control.unlock();
         }

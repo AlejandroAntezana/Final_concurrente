@@ -1,3 +1,4 @@
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
 
 public class Shopping implements ActividadParque{
@@ -25,6 +26,12 @@ public class Shopping implements ActividadParque{
         } finally {
             capacidad.release();
         }
+    }
+
+    @Override
+    public void abrir() {
+        this.abierto = true;
+        Registro.informar(" Shopping - habilitado para el publico.");
     }
 
     public void cerrar() {
