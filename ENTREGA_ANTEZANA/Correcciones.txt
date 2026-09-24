@@ -1,0 +1,173 @@
+He ejecutado 3 pruebas completas de simulación del archivo SimulacionParque.java ubicado en src/ y capturado las trazas completas de ejecución en
+  cada una.                                                                                                                                        
+                                                                                                                                                   
+  Tras analizar los resultados de las 3 pruebas y contrastarlos minuciosamente con el código fuente y las consignas del enunciado (Trabajo Práctico
+  Obligatorio - Parque de Diversiones.pdf), el comportamiento NO es el esperado. Se detectaron múltiples fallos críticos de sincronización,        
+  condiciones de carrera, bloqueos (deadlock/starvation) y desajustes con el enunciado.                                                            
+                                                                                                                                                   
+  A continuación se detalla el análisis punto por punto.                                                                                           
+  ──────                                                                                                                                           
+  ### 1. Resumen de las 3 Pruebas Ejecutadas                                                                                                       
+                                                                                                                                                   
+   Métrica / Observación                                            │         Prueba 1         │        Prueba 2         │        Prueba 3
+  ──────────────────────────────────────────────────────────────────┼──────────────────────────┼─────────────────────────┼─────────────────────────
+   Visitantes iniciales creados                                     │            40            │           40            │           40
+   Visitantes iniciales rechazados en el arranque (ACCESO DENEGADO) │        40 (100%)         │        18 (45%)         │        40 (100%)
+   Turnos completados en Autitos Chocadores                         │            0             │            0            │            0
+   Comensales que lograron almorzar en el Comedor                   │            0             │            0            │            0
+   Carros completados en Montaña Rusa                               │            0             │            3            │            0
+   Grupos formados en el Teatro                                     │            0             │            1            │            0
+   Pasajeros promedio por viaje en Barco Pirata y Tren              │        1 pasajero        │     1 a 2 pasajeros     │       1 pasajero
+  ──────                                                                                                                                           
+  ### 2. Problemas Críticos de Concurrencia y Errores de Diseño                                                                                    
+                                                                                                                                                   
+  #### Error 1: Condición de Carrera Destructiva en el Molinete de Entrada (Parque.java y SimulacionParque.java)                                   
+                                                                                                                                                   
+  • Ubicación: Parque.java:46-53 y SimulacionParque.java:68-78                                                                                     
+  • Qué ocurre: En SimulacionParque.java, el hilo principal arranca hiloReloj.start() e inmediatamente arranca los 40 hilos de visitantes[i].      
+  start(). El hilo RelojParque.java:23-27, antes de llamar a parque.abrirDia(1), primero itera sobre las 9 actividades llamando a abrir(). Durante 
+  esos milisegundos, los hilos de los visitantes ya entraron a Parque.java:46:                                                                     
+    synchronized (this) {                                                                                                                          
+        if (!ingresoAbierto) {                                                                                                                     
+            Registro.informar(nombre + " llego fuera de horario -> ACCESO DENEGADO.");                                                             
+            return false; // El visitante finaliza su ejecucion aqui mismo                                                                         
+        }                                                                                                                                          
+    }                                                                                                                                              
+                                                                                                                                                   
+  • Consecuencia en los tests:                                                                                                                     
+      • En la Prueba 1 y la Prueba 3, los 40 visitantes iniciales (el 100%) fueron rechazados y terminaron de inmediato en los primeros 350 ms. El 
+      parque quedó desierto todo el Día 1 hasta que el generador empezó a crear visitantes de a uno.                                               
+      • En la Prueba 2, entraron solo 22 y 18 fueron expulsados antes de las 09:00 hs.                                                             
+  • Incumplimiento: Si un visitante llega antes de las 09:00 hs, debe esperar en la puerta mediante sincronización (wait()) hasta que el parque    
+  abra sus puertas (tal como estaba documentado originalmente en DECISIONES_DE_SINCRONIZACION.md:97-103 con while (!ingresoAbierto &&              
+  !ingresoFinalizado) wait();), en lugar de abortar permanentemente.                                                                               
+  ──────                                                                                                                                           
+  #### Error 2: Inanición y Bloqueo Total en el Comedor (Comedor.java)                                                                             
+                                                                                                                                                   
+  • Ubicación: Comedor.java:40-45                                                                                                                  
+  • Qué ocurre: En el constructor se define:                                                                                                       
+    capacidad = new Semaphore(cantidadMesas * 4, true); // 3 mesas * 4 = 12 permisos                                                               
+    mesa = new CyclicBarrier(4, ...);                                                                                                              
+  Pero en el método abrir() se programó:                                                                                                           
+    @Override                                                                                                                                      
+    public void abrir() {                                                                                                                          
+        this.mesa = new CyclicBarrier(20); // <-- ERROR: ¡Barrera de 20!                                                                           
+        this.abierto = true;                                                                                                                       
+        Registro.informar(" Comedor - habilitado para el publico.");                                                                               
+    }                                                                                                                                              
+                                                                                                                                                   
+  • Consecuencia en los tests: Como RelojParque ejecuta abrir() a las 09:00 hs del Día 1, la barrera pasa a requerir 20 personas, pero el semáforo 
+  capacidad solo deja pasar a 12 personas simultáneamente.                                                                                         
+      • Es matemáticamente imposible que la barrera se abra jamás.                                                                                 
+      • En la Prueba 2 entraron 12 visitantes al comedor (Visitantes 23, 17, 35, 16, 33, 24, 38, 29, 25, 43, 37 y 47). Ninguno comió. Se quedaron  
+      sentados bloqueados en mesa.await() hasta que a las 19:00 hs cerrar() forzó un BrokenBarrierException y tuvieron que irse directamente a la  
+      salida.                                                                                                                                      
+                                                                                                                                                   
+  ──────                                                                                                                                           
+  #### Error 3: Proliferación de Hilos Conducción Huérfanos en TransporteConCola.java                                                              
+                                                                                                                                                   
+  • Ubicación: TransporteConCola.java:40-47 y SimulacionParque.java:69-70                                                                          
+  • Qué ocurre:                                                                                                                                    
+      1. En SimulacionParque, se crean y lanzan hiloBarco y hiloTren (hiloBarco.start()).                                                          
+      2. Al mismo tiempo, el reloj llama a barco.abrir() y tren.abrir(), que hacen:                                                                
+        Thread conductor = new Thread(this, "Conductor-" + nombre);                                                                                
+        conductor.start();                                                                                                                         
+                                                                                                                                                   
+      3. Cada nuevo día (Día 2 y Día 3), abrir() lanza otro hilo más.                                                                              
+  • Consecuencia en los tests:                                                                                                                     
+      • En el Día 1 corren dos hilos conductores en paralelo (Encargado barco y Conductor-BARCO PIRATA) consumiendo la misma cola de solicitudes al
+      mismo tiempo.                                                                                                                                
+      • En el Día 3 ya existen múltiples hilos conductores creados.                                                                                
+      • En SimulacionParque.java:88-89 solo se hace join() sobre los primeros hilos (que murieron al terminar el Día 1). Los hilos de los días 2 y 
+      3 quedan como hilos huérfanos sin sincronización al terminar la simulación.                                                                  
+                                                                                                                                                   
+  ──────                                                                                                                                           
+  #### Error 4: Eliminación de las Acciones de Barrera al Reiniciar el Día                                                                         
+                                                                                                                                                   
+  • Ubicación: MontanaRusa.java:48, AutitosChocadores.java:39, Comedor.java:42 y Teatro.java:36.                                                   
+  • Qué ocurre: En los constructores se inicializan las barreras con una acción Runnable (para imprimir por ejemplo "MONTANA RUSA: carro completo, 
+  comienza el viaje"). Sin embargo, en el método abrir() de cada clase se sobreescribe la variable instanciando una barrera simple:                
+    this.barreraSalida = new CyclicBarrier(5); // Sin Runnable                                                                                     
+                                                                                                                                                   
+  • Consecuencia: Como abrir() se llama a las 09:00 hs antes de que suba cualquier visitante, la acción de la barrera queda eliminada desde el     
+  primer instante. En los logs nunca se imprime el mensaje de partida grupal de la atracción.                                                      
+  ──────                                                                                                                                           
+  #### Error 5: Omisión del Chequeo de Cierre en Teatro.java                                                                                       
+                                                                                                                                                   
+  • Ubicación: Teatro.java:19-32                                                                                                                   
+  • Qué ocurre: En el método usar(String nombre), no se verifica la variable abierto:                                                              
+    public boolean usar(String nombre) throws InterruptedException {                                                                               
+        capacidadSala.acquire();                                                                                                                   
+        try {                                                                                                                                      
+            grupoEntrada.await(); // Nunca chequea si abierto == false                                                                             
+            ...                                                                                                                                    
+                                                                                                                                                   
+  • Consecuencia: Si un visitante intenta entrar al teatro después de las 19:00 hs o durante el cierre, adquiere un permiso de sala y queda        
+  indefinidamente atrapado en grupoEntrada.await() esperando a que se forme un grupo de 5 personas que nunca se completará.                        
+  ──────                                                                                                                                           
+  #### Error 6: Fuga de Bloqueo en RealidadVirtual.java                                                                                            
+                                                                                                                                                   
+  • Ubicación: RealidadVirtual.java:41-46                                                                                                          
+  • Qué ocurre:                                                                                                                                    
+    while (visores < 1 || manoplas < 2 || bases < 1) {                                                                                             
+        equipoDisponible.await();                                                                                                                  
+    }                                                                                                                                              
+    if (!abierto) {                                                                                                                                
+        return false;                                                                                                                              
+    }                                                                                                                                              
+  La condición !abierto se evalúa después de salir del while. Si la atracción cierra (cerrar() hace abierto = false; equipoDisponible.signalAll();)
+  en un momento en que el stock de equipos no está completo, los hilos que despiertan reevalúan la guarda (visores < 1 || manoplas < 2 || bases <  
+  1), que sigue siendo verdadera, y vuelven a dormirse en equipoDisponible.await().                                                                
+  • Solución esperada: La condición del bucle debe ser while (abierto && (visores < 1 || manoplas < 2 || bases < 1)).                              
+  ──────                                                                                                                                           
+  ### 3. Incumplimientos Respecto al Enunciado del TP                                                                                              
+                                                                                                                                                   
+  1. Atracción con Monitores:                                                                                                                      
+      • El enunciado exige explícitamente:                                                                                                         
+      │ "deben realizar al menos una de las atracciones con Semaforos, otra con Monitores y otra con Locks."                                       
+                                                                                                                                                   
+      • Parque.java es un Monitor, pero es la administración general del complejo, no una atracción. Todas las atracciones usan Semáforos, Barreras,
+      Locks o Colas Bloqueantes. Ninguna atracción individual implementa la sincronización de su actividad mediante un Monitor Java (synchronized, 
+      wait, notifyAll).                                                                                                                            
+  2. Autitos Chocadores:                                                                                                                           
+      • Exige turnos de 20 personas (10 autos de a 2 personas). En las tres simulaciones no se pudo iniciar ni un solo turno. Los 34 visitantes que
+      intentaron usar la pista terminaron sufriendo Se interrumpio un turno de autitos a las 19:00 hs.                                             
+  3. Barco Pirata y Tren:                                                                                                                          
+      • Se pide: "Los visitantes que no logran ingresar deben esperar al próximo viaje."                                                           
+      • En TransporteConCola.java:32, si la cola está llena (!fila.offer(solicitud)), el método devuelve false y el visitante se va a otra         
+      atracción en vez de esperar al próximo viaje.                                                                                                
+      • Además, casi el 100% de los viajes partieron con 1 solo pasajero debido a que los tiempos de espera del transporte (50 ms y 120 ms) son    
+      significativamente menores al tiempo de llegada de nuevos visitantes (300 ms).                                                               
+  4. Comedor:                                                                                                                                      
+      • Exige mesas de 4 personas. La barrera modificada a 20 impidió totalmente que se cumpla la consigna.                                        
+                                                                                                                                                   
+  ──────                                                                                                                                           
+  ### 4. Correcciones Recomendadas
+  
+  1. En Parque.java:
+  Hacer que los visitantes que llegan antes de las 09:00 hs esperen la apertura en lugar de ser rechazados:
+    synchronized (this) {
+        while (!ingresoAbierto && diaActual <= totalDias) {
+            wait();
+        }
+        if (diaActual > totalDias) return false;
+    }
+  
+  2. En Comedor.java:
+  Corregir abrir() para usar una barrera de 4 personas preservando su acción:
+    this.mesa = new CyclicBarrier(4, () -> 
+        Registro.informar("COMEDOR: se completo una mesa de cuatro; todos comienzan a comer")
+    );
+  
+  3. En TransporteConCola.java:
+  No crear un nuevo Thread en abrir(). El conductor debe ser un único hilo persistente que espere mientras el servicio esté activo y no duplicar   
+  conductores sobre la misma atracción.
+  4. En Teatro.java:
+  Verificar if (!abierto) return false; antes de intentar adquirir capacidad y esperar al grupo.
+  5. En RealidadVirtual.java:
+  Incluir abierto dentro del predicado del while:
+    while (abierto && (visores < 1 || manoplas < 2 || bases < 1)) {
+        equipoDisponible.await();
+    }
+    if (!abierto) return false;
+
